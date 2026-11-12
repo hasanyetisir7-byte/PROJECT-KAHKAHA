@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PROJECT KAHKAHA</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101522;color:white;font-family:Inter,Arial,sans-serif}canvas{display:block}
+.panel{position:fixed;background:#101a2cdd;border:1px solid #ffffff24;border-radius:14px;backdrop-filter:blur(10px);box-shadow:0 8px 28px #0005}
+#logo{top:14px;left:14px;padding:11px 15px}#logo b{letter-spacing:3px;color:#ffd36a;font-size:17px}#logo small{display:block;color:#b7c6da;margin-top:3px;font-size:10px}
+#hud{top:14px;right:14px;padding:11px 14px;min-width:150px;font-size:13px;line-height:1.7}
+#controls{bottom:14px;left:14px;padding:10px 13px;font-size:12px;line-height:1.7;color:#cbd7e7}
+#status{bottom:14px;right:14px;padding:10px 13px;font-size:12px}
+#toast{position:fixed;top:85px;left:50%;transform:translateX(-50%);padding:10px 16px;background:#263c5b;border:1px solid #ffd36a;border-radius:30px;opacity:0;transition:opacity .2s;pointer-events:none}
+#start{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:linear-gradient(135deg,#101522ee,#1b2942ee)}
+.card{width:min(500px,calc(100% - 30px));padding:28px;text-align:center}.card h1{font-size:clamp(30px,7vw,48px);letter-spacing:5px;color:#ffd36a;margin:0}.card p{color:#c7d4e7;line-height:1.6}.card button{border:0;background:linear-gradient(90deg,#ff9e43,#ffd36a);color:#1c2432;font-weight:900;padding:13px 22px;border-radius:10px;cursor:pointer;font-size:15px}
+#name{padding:10px;border:1px solid #50617a;border-radius:8px;background:#0c1422;color:white;width:80%;margin:8px}
+#cross{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);color:#fff9;font-size:22px;pointer-events:none}
+@media(max-width:600px){#controls{font-size:10px;max-width:55%}#hud{font-size:11px}}
+</style></head><body>
+<div id="logo" class="panel"><b>PROJECT KAHKAHA</b><small>ARKADAŞLARLA KAOS BAŞLASIN</small></div>
+<div id="hud" class="panel">👥 Oyuncular: <b id="count">1/10</b><br>⭐ Düşürme: <b id="score">0</b><br>🟢 Bağlantı: <b id="connection">Bağlanıyor</b></div>
+<div id="controls" class="panel">WASD: Hareket · Fare: Kamera<br>SPACE: Zıpla · SHIFT: Koş<br>Sol tık / F: Şaplak at!<br>ESC: Fareyi serbest bırak</div>
+<div id="status" class="panel">Amaç: Rakipleri arenadan aşağı düşür!</div><div id="cross">+</div><div id="toast"></div>
+<div id="start"><div class="card panel"><h1>PROJECT<br>KAHKAHA</h1><p>Lastik gibi karakterler, komik çarpışmalar ve arkadaşlarla arena kaosu!<br>Odaya katılmak için bir isim yaz.</p><input id="name" maxlength="16" placeholder="Oyuncu adın" value="Oyuncu"><br><button id="join">ARENAYA KATIL</button><p style="font-size:11px">Bu prototip online oyuncu bağlantısını destekler. Sunucuya dağıtıldığında arkadaşların aynı bağlantıdan katılabilir.</p></div></div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const socket=io();
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x8ec5df);scene.fog=new THREE.Fog(0x8ec5df,35,100);
+const camera=new THREE.PerspectiveCamera(68,innerWidth/innerHeight,.1,180);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xe5f7ff,0x66516b,2));
+const sun=new THREE.DirectionalLight(0xffedc8,2.3);sun.position.set(-12,22,12);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);scene.add(sun);
+const mat=(c,r=.75)=>new THREE.MeshStandardMaterial({color:c,roughness:r});
+const floor=new THREE.Mesh(new THREE.CylinderGeometry(19,19,1,64),mat(0x586d79));floor.position.y=-.5;floor.receiveShadow=true;scene.add(floor);
+const top=new THREE.Mesh(new THREE.CylinderGeometry(18.7,18.7,.18,64),mat(0x93a6a4));top.position.y=.08;top.receiveShadow=true;scene.add(top);
+const rim=new THREE.Mesh(new THREE.TorusGeometry(18.7,.28,10,80),mat(0xffc85a));rim.rotation.x=Math.PI/2;rim.position.y=.2;scene.add(rim);
+for(let i=0;i<12;i++){let a=i/12*Math.PI*2;let pillar=new THREE.Mesh(new THREE.CylinderGeometry(.45,.6,3,10),mat([0xff7c69,0x69bfff,0xffd166][i%3]));pillar.position.set(Math.cos(a)*16,1.5,Math.sin(a)*16);pillar.castShadow=true;scene.add(pillar)}
+const avatars=new Map();
+function makeAvatar(data){const g=new THREE.Group();const color=mat(data.color||0xff6b78);const skin=mat(0xffc7a0);const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.48,.62,5,10),color);torso.position.y=1.15;torso.castShadow=true;g.add(torso);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.38,16,12),skin);head.position.y=2.05;head.castShadow=true;g.add(head);
+const eyeMat=new THREE.MeshBasicMaterial({color:0x202532});for(let x of [-.14,.14]){let eye=new THREE.Mesh(new THREE.SphereGeometry(.045,8,8),eyeMat);eye.position.set(x,2.1,.33);g.add(eye)}
+const limbs=[];for(let side of [-1,1]){let arm=new THREE.Mesh(new THREE.CapsuleGeometry(.14,.55,4,8),skin);arm.position.set(side*.62,1.2,0);arm.rotation.z=side*.22;arm.castShadow=true;g.add(arm);limbs.push(arm);
+let leg=new THREE.Mesh(new THREE.CapsuleGeometry(.17,.48,4,8),mat(0x26354b));leg.position.set(side*.25,.35,0);leg.castShadow=true;g.add(leg);limbs.push(leg)}
+scene.add(g);avatars.set(data.id,{group:g,limbs,data,vel:new THREE.Vector3(),rot:0,fall:0});return avatars.get(data.id)}
+let myId=null,myAvatar=null,score=0,yaw=0,pitch=-.22,locked=false,vy=0,onGround=true,attackCooldown=0;
+const keys={};addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyF')attack()});addEventListener('keyup',e=>keys[e.code]=false);
+renderer.domElement.addEventListener('click',()=>{if(document.querySelector('#start').style.display==='none'&&!locked)renderer.domElement.requestPointerLock()});
+addEventListener('mousedown',e=>{if(e.button===0&&locked)attack()});
+document.addEventListener('pointerlockchange',()=>locked=document.pointerLockElement===renderer.domElement);
+document.addEventListener('mousemove',e=>{if(locked){yaw-=e.movementX*.0025;pitch=Math.max(-.7,Math.min(.3,pitch-e.movementY*.002))}});
+function toast(t){let el=document.querySelector('#toast');el.textContent=t;el.style.opacity=1;clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.style.opacity=0,1500)}
+function attack(){if(!myAvatar||attackCooldown>0)return;attackCooldown=.65;myAvatar.fall=.18;socket.emit('bonk',nearestOpponent());toast('ŞAPLAK! 💥')}
+function nearestOpponent(){let best=null,d=3.4;for(let [id,a] of avatars){if(id===myId)continue;let n=a.group.position.distanceTo(myAvatar.group.position);if(n<d){d=n;best=id}}return best}
+socket.on('welcome',data=>{myId=data.self.id;myAvatar=makeAvatar(data.self);for(const p of data.players)if(p.id!==myId)makeAvatar(p);document.querySelector('#connection').textContent='Bağlandı';document.querySelector('#count').textContent=avatars.size+'/10'});
+socket.on('playerJoined',p=>{if(!avatars.has(p.id)){makeAvatar(p);document.querySelector('#count').textContent=avatars.size+'/10';toast(p.name+' katıldı!')}});
+socket.on('playerLeft',id=>{let a=avatars.get(id);if(a){scene.remove(a.group);avatars.delete(id);document.querySelector('#count').textContent=avatars.size+'/10';toast('Bir oyuncu ayrıldı.')}});
+socket.on('playerMoved',p=>{let a=avatars.get(p.id);if(a){a.target=new THREE.Vector3(p.x,p.y,p.z);a.targetRot=p.rot}});
+socket.on('bonk',e=>{if(e.target===myId&&myAvatar){myAvatar.vel.x+=(Math.random()-.5)*11;myAvatar.vel.z+=(Math.random()-.5)*11;myAvatar.vel.y=5;myAvatar.fall=.7;toast('KAFANA ŞAPLAK YEDİN! 🤕')}else if(e.from===myId&&e.target){let a=avatars.get(e.target);if(a){let dir=a.group.position.clone().sub(myAvatar.group.position).normalize();a.vel.add(dir.multiplyScalar(9));a.vel.y=5;a.fall=.7;score++;document.querySelector('#score').textContent=score;toast('GÜZEL ŞAPLAK!')}}});
+socket.on('full',()=>{document.querySelector('#connection').textContent='Oda dolu';toast('Oda dolu! En fazla 10 oyuncu.')});
+document.querySelector('#join').onclick=()=>{let name=document.querySelector('#name').value.trim()||'Oyuncu';socket.emit('setName',name);document.querySelector('#start').style.display='none';renderer.domElement.requestPointerLock()};
+socket.on('connect',()=>document.querySelector('#connection').textContent='Bağlandı');
+socket.on('disconnect',()=>document.querySelector('#connection').textContent='Koptu');
+let last=performance.now(),sendTimer=0;
+function animate(now){requestAnimationFrame(animate);let dt=Math.min((now-last)/1000,.035);last=now;
+if(myAvatar){let f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),moving=f||s;let speed=keys.ShiftLeft?9:6;
+if(moving){let l=Math.hypot(f,s);f/=l;s/=l;let dx=(-Math.sin(yaw)*f+Math.cos(yaw)*s)*speed*dt,dz=(-Math.cos(yaw)*f-Math.sin(yaw)*s)*speed*dt;myAvatar.vel.x+=dx*7;myAvatar.vel.z+=dz*7;myAvatar.group.rotation.y=yaw+Math.atan2(s,f)}
+myAvatar.vel.y-=17*dt;myAvatar.group.position.addScaledVector(myAvatar.vel,dt);myAvatar.vel.x*=Math.pow(.08,dt);myAvatar.vel.z*=Math.pow(.08,dt);
+if(myAvatar.group.position.y<0){myAvatar.group.position.y=0;myAvatar.vel.y=0;onGround=true}
+if(keys.Space&&onGround){myAvatar.vel.y=7;onGround=false}
+let p=myAvatar.group.position;if(Math.hypot(p.x,p.z)>18.1){p.x*=.985;p.z*=.985;myAvatar.vel.x-=p.x*.4;myAvatar.vel.z-=p.z*.4}
+myAvatar.fall=Math.max(0,myAvatar.fall-dt);myAvatar.group.rotation.z=THREE.MathUtils.lerp(myAvatar.group.rotation.z,myAvatar.fall?-.8:0,.12);
+sendTimer+=dt;if(sendTimer>.05){socket.emit('move',{x:p.x,y:p.y,z:p.z,rot:myAvatar.group.rotation.y});sendTimer=0}
+}
+for(let [id,a] of avatars){if(id===myId)continue;if(a.target){a.group.position.lerp(a.target,.35);a.group.rotation.y=a.targetRot||0}a.fall=Math.max(0,a.fall-dt);a.group.rotation.z=THREE.MathUtils.lerp(a.group.rotation.z,a.fall?-.8:0,.1)}
+for(let a of avatars.values()){let t=now*.012;a.limbs.forEach((limb,i)=>{limb.rotation.x=Math.sin(t+i*2)*.12+(a.fall?-.8:0)})}
+if(myAvatar){let pos=myAvatar.group.position;let target=new THREE.Vector3(pos.x,pos.y+1.4,pos.z);let desired=new THREE.Vector3(pos.x+Math.sin(yaw)*7,pos.y+3.1+pitch*4,pos.z+Math.cos(yaw)*7);camera.position.lerp(desired,.13);camera.lookAt(target)}
+renderer.render(scene,camera)}
+requestAnimationFrame(animate);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script></body></html>
